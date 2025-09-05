@@ -1,4 +1,3 @@
-
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.*;
@@ -10,11 +9,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+import org.xml.sax.Attributes;
+import org.xml.sax.helpers.DefaultHandler;
 
 public class ManejadorArchivos {
 
@@ -93,14 +91,16 @@ public class ManejadorArchivos {
             ZipEntry zipEntry;
             while ((zipEntry = zis.getNextEntry()) != null) {
                 if (zipEntry.getName().equals("word/document.xml")) {
-                    DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
-                    DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
-                    Document xmlDoc = dBuilder.parse(zis);
-                    xmlDoc.getDocumentElement().normalize();
                     interfaz.getTextPane().setText("");
-                    leerXml(xmlDoc);
-                    this.archivoActual = archivo;
-                    interfaz.setTitle("Editor de Texto - " + archivo.getName());
+                    
+                    SAXParserFactory factory = SAXParserFactory.newInstance();
+                    SAXParser saxParser = factory.newSAXParser();
+                    
+                    LectorXml handler = new LectorXml(interfaz.getTextPane().getStyledDocument());
+                    saxParser.parse(zis, handler);
+                    
+                    this.archivoActual = null;
+                    interfaz.setTitle("Editor de Texto - " + archivo.getName() + " (importado)");
                     break;
                 }
             }
@@ -109,56 +109,75 @@ public class ManejadorArchivos {
             JOptionPane.showMessageDialog(interfaz, "Error al procesar el archivo DOCX.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
+}
 
-    private void leerXml(Document xmlDoc) {
-        StyledDocument styledDoc = interfaz.getTextPane().getStyledDocument();
-        NodeList parrafos = xmlDoc.getElementsByTagName("w:p");
-        try {
-            for (int i = 0; i < parrafos.getLength(); i++) {
-                NodeList runs = ((Element) parrafos.item(i)).getElementsByTagName("w:r");
-                for (int j = 0; j < runs.getLength(); j++) {
-                    Element runElement = (Element) runs.item(j);
-                    String texto = "";
-                    NodeList textNodes = runElement.getElementsByTagName("w:t");
-                    if (textNodes.getLength() > 0 && textNodes.item(0) != null) {
-                        texto = textNodes.item(0).getTextContent();
-                    }
-                    SimpleAttributeSet atributos = new SimpleAttributeSet();
-                    NodeList props = runElement.getElementsByTagName("w:rPr");
-                    if (props.getLength() > 0) {
-                        Element propsElement = (Element) props.item(0);
-                        if (propsElement.getElementsByTagName("w:b").getLength() > 0) StyleConstants.setBold(atributos, true);
-                        if (propsElement.getElementsByTagName("w:i").getLength() > 0) StyleConstants.setItalic(atributos, true);
-                        if (propsElement.getElementsByTagName("w:u").getLength() > 0) StyleConstants.setUnderline(atributos, true);
-                        
-                        NodeList colorNodes = propsElement.getElementsByTagName("w:color");
-                        if (colorNodes.getLength() > 0) {
-                            String colorHex = ((Element) colorNodes.item(0)).getAttribute("w:val");
-                            if (colorHex != null && !colorHex.isEmpty()) {
-                                StyleConstants.setForeground(atributos, new Color(Integer.parseInt(colorHex, 16)));
-                            }
-                        }
-                        NodeList szNodes = propsElement.getElementsByTagName("w:sz");
-                        if (szNodes.getLength() > 0) {
-                            String szVal = ((Element) szNodes.item(0)).getAttribute("w:val");
-                            if (szVal != null && !szVal.isEmpty()) {
-                                StyleConstants.setFontSize(atributos, Integer.parseInt(szVal) / 2);
-                            }
-                        }
-                        NodeList fontNodes = propsElement.getElementsByTagName("w:rFonts");
-                        if (fontNodes.getLength() > 0) {
-                            String fontName = ((Element) fontNodes.item(0)).getAttribute("w:ascii");
-                            if (fontName != null && !fontName.isEmpty()) {
-                                StyleConstants.setFontFamily(atributos, fontName);
-                            }
-                        }
-                    }
-                    styledDoc.insertString(styledDoc.getLength(), texto, atributos);
-                }
-                styledDoc.insertString(styledDoc.getLength(), "\n", null);
+class LectorXml extends DefaultHandler {
+    private StyledDocument styledDoc;
+    private SimpleAttributeSet atributosActuales;
+    private StringBuilder textoActual;
+    private boolean dentroDeEtiquetaDeTexto;
+
+    public LectorXml(StyledDocument doc) {
+        this.styledDoc = doc;
+        this.textoActual = new StringBuilder();
+        this.atributosActuales = new SimpleAttributeSet();
+    }
+
+    @Override
+    public void startElement(String uri, String localName, String qName, Attributes attributes) {
+        if ("w:r".equals(qName)) {
+            atributosActuales = new SimpleAttributeSet();
+        }
+        if ("w:t".equals(qName)) {
+            textoActual.setLength(0);
+            dentroDeEtiquetaDeTexto = true;
+        }
+        if ("w:b".equals(qName)) StyleConstants.setBold(atributosActuales, true);
+        if ("w:i".equals(qName)) StyleConstants.setItalic(atributosActuales, true);
+        if ("w:u".equals(qName)) StyleConstants.setUnderline(atributosActuales, true);
+        if ("w:color".equals(qName)) {
+            String colorHex = attributes.getValue("w:val");
+            if (colorHex != null && !colorHex.isEmpty()) {
+                StyleConstants.setForeground(atributosActuales, new Color(Integer.parseInt(colorHex, 16)));
             }
-        } catch (BadLocationException e) {
-            e.printStackTrace();
+        }
+        if ("w:sz".equals(qName)) {
+            String szVal = attributes.getValue("w:val");
+            if (szVal != null && !szVal.isEmpty()) {
+                StyleConstants.setFontSize(atributosActuales, Integer.parseInt(szVal) / 2);
+            }
+        }
+        if ("w:rFonts".equals(qName)) {
+            String fontName = attributes.getValue("w:ascii");
+            if (fontName != null && !fontName.isEmpty()) {
+                StyleConstants.setFontFamily(atributosActuales, fontName);
+            }
+        }
+    }
+
+    @Override
+    public void characters(char[] ch, int start, int length) {
+        if (dentroDeEtiquetaDeTexto) {
+            textoActual.append(ch, start, length);
+        }
+    }
+
+    @Override
+    public void endElement(String uri, String localName, String qName) {
+        if ("w:t".equals(qName)) {
+            try {
+                styledDoc.insertString(styledDoc.getLength(), textoActual.toString(), atributosActuales);
+            } catch (BadLocationException e) {
+                e.printStackTrace();
+            }
+            dentroDeEtiquetaDeTexto = false;
+        }
+        if ("w:p".equals(qName)) {
+            try {
+                styledDoc.insertString(styledDoc.getLength(), "\n", null);
+            } catch (BadLocationException e) {
+                e.printStackTrace();
+            }
         }
     }
 }

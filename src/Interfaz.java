@@ -120,4 +120,4 @@ public class Interfaz extends JFrame {
             accionTamano.actionPerformed(new ActionEvent(textPane, ActionEvent.ACTION_PERFORMED, null));
         }
     }
-}
+}     
