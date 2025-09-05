@@ -2,7 +2,7 @@ import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.*;
-import javax.swing.text.rtf.RTFEditorKit; // Importante: Se usa la libreria especifica para RTF
+import javax.swing.text.rtf.RTFEditorKit; 
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
